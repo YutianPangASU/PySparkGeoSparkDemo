@@ -1,3 +1,16 @@
+#! /home/anaconda3 python
+#-*- coding: utf-8 -*-
+
+"""
+@Author: Yutian Pang
+@Date: 2020-10-25
+
+This Python script is used to process the iff sector flight event data for flight event prediction task.
+
+@Last Modified by: Yutian Pang
+@Last Modified date: 2020-10-26
+"""
+
 import pandas as pd
 import numpy as np
 import glob
@@ -59,7 +72,7 @@ def previous_event_sequence_feature(df_ori, df_new, timestamp_threshold):
 def aircraft_density_feature(df_new, iff_file_path, lat_threshold, lon_threshold, timestamp_threshold, geospark=False):
     """
     This function is to calculate the aircraft density feature of the current event using PySpark. This function has an
-    option of geospark=True to speedup the query process.
+    option of geospark=True to speedup the query process. This will require a successful install of geospark.
     :param df_new:
     :param iff_file_path:
     :param lat_threshold:
@@ -175,6 +188,8 @@ def aircraft_density_feature(df_new, iff_file_path, lat_threshold, lon_threshold
 
         # concatenate dataframes
         df_new = pd.concat([df_new, count], axis=1)
+
+        spark.stop()
         return df_new
 
     else:
@@ -229,28 +244,30 @@ if __name__ == '__main__':
         df_2class = df[(df['EvType'] == 'EV_LOOP') | (df['EvType'] == 'EV_GOA')]
 
         # set parameters
-        lat_threshold = 5
-        lon_threshold = 5
-        timestamp_threshold = [10, 30, 60, 120, 300]
+        lat_threshold = 2
+        lon_threshold = 2
+        timestamp_threshold = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120]
         #timestamp_threshold = [10, 30]
 
-        # # find the event density feature
+        # find the event density feature
         df_2class = event_density_feature(df, df_2class, lat_threshold, lon_threshold, timestamp_threshold)
-        #
-        # # find the previous event happened to the same callsign
+
+        # find the previous event happened to the same callsign
         df_2class = previous_event_sequence_feature(df, df_2class, timestamp_threshold)
 
         # save csv
         df_2class.to_csv('./processed_ev_data/2class_{}.csv'.format(date), encoding='utf-8', index=False)
+        #df_2class.to_csv('./processed_ev_data/2class_{}_new.csv'.format(date), encoding='utf-8', index=False)
 
         # load preprocessed csv
         #df_2class = pd.read_csv('2class.csv', nrows=10)
 
         # # find the nearby aircraft feature
         sector_iff_file_path = glob.glob("/media/ypang6/paralab/Research/data/ZTL/IFF_ZTL_{}*.csv".format(date))[0]
-        df_2class_ac = aircraft_density_feature(df_2class, sector_iff_file_path, lat_threshold, lon_threshold, timestamp_threshold, geospark=True)
+        df_2class_ac = aircraft_density_feature(df_2class, sector_iff_file_path, lat_threshold, lon_threshold, timestamp_threshold, geospark=False)
 
         # save into csv
         df_2class_ac.to_csv('./processed_ev_data/2class_ac_{}.csv'.format(date), encoding='utf-8', index=False)
+        #df_2class_ac.to_csv('./processed_ev_data/2class_ac_{}_new.csv'.format(date), encoding='utf-8', index=False)
 
         print('Done with {}'.format(date))
