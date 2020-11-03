@@ -177,7 +177,7 @@ def aircraft_density_feature(df_new, iff_file_path, lat_threshold, lon_threshold
         count = pd.DataFrame(index=df_new.index, columns=['ac_count_' + str(t) for t in timestamp_threshold])
         for index, row in df_new.iterrows():
             for t_threshold in timestamp_threshold:
-                ev_time = int(row['tMidnightSecs'] + row['tStart'])
+                ev_time = int(row['tMidnightSecs'] + row['tEv'])
                 lat = row['Lat']
                 lon = row['Lon']
 
@@ -207,7 +207,7 @@ def aircraft_density_feature(df_new, iff_file_path, lat_threshold, lon_threshold
         count = pd.DataFrame(index=df_new.index, columns=['ac_count_' + str(t) for t in timestamp_threshold])
         for index, row in df_new.iterrows():
             for t_threshold in timestamp_threshold:
-                ev_time = int(row['tMidnightSecs'] + row['tStart'])
+                ev_time = int(row['tMidnightSecs'] + row['tEv'])
                 lat = row['Lat']
                 lon = row['Lon']
 
