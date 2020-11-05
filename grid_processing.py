@@ -9,6 +9,7 @@ import numpy as np
 import glob
 import matplotlib.pyplot as plt
 import pandas as pd
+import matplotlib.cm as cm
 
 
 def ac_density_map(iff_file_path, lat, lon, time, geospark_rdd=False, geospark_sql=False):
@@ -182,10 +183,41 @@ def ac_density_map(iff_file_path, lat, lon, time, geospark_rdd=False, geospark_s
 
 
 def iff_density_map_threading_helper():
+    """
+    Threading helper for fast data processing on iff dataset
+    :return:
+    """
     pass
 
 
-def ev_density_map(ev_file_path, lat, lon, time):
+def ev_density_map_threading_helper():
+    pass
+
+
+def kNN2DDens(xv, yv, resolution, neighbours, dim=2):
+    """
+    """
+    from scipy.spatial import cKDTree
+    # Create the tree
+    tree = cKDTree(np.array([xv, yv]).T)
+    # Find the closest nnmax-1 neighbors (first entry is the point itself)
+    grid = np.mgrid[0:resolution, 0:resolution].T.reshape(resolution**2, dim)
+    dists = tree.query(grid, neighbours)
+    # Inverse of the sum of distances to each grid point.
+    inv_sum_dists = 1. / dists[0].sum(1)
+
+    # Reshape
+    im = inv_sum_dists.reshape(resolution, resolution)
+    return im
+
+
+def data_coord2view_coord(p, resolution, pmin, pmax):
+    dp = pmax - pmin
+    dv = (p - pmin) / dp * resolution
+    return dv
+
+
+def ev_density_map(ev_file_path, lat, lon, time, neighbours, smoothing):
     df = pd.read_csv(ev_file_path)
 
     # remove useless columns
@@ -193,24 +225,57 @@ def ev_density_map(ev_file_path, lat, lon, time):
     df = df[cols]
 
     # two class
-    df = df[(df['EvType'] == 'EV_LOOP') | (df['EvType'] == 'EV_GOA')]
+    #df = df[(df['EvType'] == 'EV_LOOP') | (df['EvType'] == 'EV_GOA')]
     df["tEv"] = df["tEv"] + df["tMidnightSecs"]
     df["tEv"] = df[["tEv"]].astype(int)
     df = df.drop(['tMidnightSecs', 'EvType'], axis=1)
 
-    # sort
     if time[1]-time[0] == 1:  # timeframe 1 second interval
         frames = np.zeros(shape=(len(time), len(lat) - 1, len(lon) - 1))
         for index_t in range(len(time)):
-            #df_temp = df.loc[(df['tEv'] >= time[index_t]) & (df['tEv'] <= time[index_t+1])]
             df_temp = df.loc[df['tEv'] == time[index_t]]
-            print("DONE")
+
+            print("Implementation not finished.")
     else:  # greater than 1 second interval
-        frames = np.zeros(shape=(len(time)-1, len(lat) - 1, len(lon) - 1))
-        for index_t in range(len(time)-1):
-            df_temp = df.loc[(df['tEv'] >= time[index_t]) & (df['tEv'] <= time[index_t+1])]
-            print("DONE")
-    pass
+        frames = np.zeros(shape=(len(time)-1, resolution, resolution))
+        #original_coord = np.zeros(shape=(len(time) - 1, resolution, 2))
+
+        for time_idx in range(len(time)-1):
+            temp_df = df.loc[(df['tEv'] >= time[time_idx]) & (df['tEv'] <= time[time_idx+1])]
+
+            ys, xs = temp_df['Lat'].to_numpy(), temp_df['Lon'].to_numpy()
+            extent = [lon_min, lon_max, lat_min, lat_max]
+            xv = data_coord2view_coord(xs, resolution, extent[0], extent[1])
+            yv = data_coord2view_coord(ys, resolution, extent[2], extent[3])
+
+            fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+            for ax, neighbour in zip(axes.flatten(), neighbours):
+
+                if neighbour == 0:
+                    #original_coord[time_idx, :, :] = np.concatenate((np.expand_dims(ys, axis=1), np.expand_dims(xs, axis=1)), axis=1)  # save ys and xs
+                    ax.plot(xs, ys, 'k.', markersize=5)
+                    ax.set_aspect('equal')
+                    ax.set_title("Scatter Plot")
+                    ax.set_xlim(extent[0], extent[1])
+                    ax.set_ylim(extent[2], extent[3])
+                else:
+                    im = kNN2DDens(xv, yv, resolution, neighbour)
+                    if neighbour == smoothing:
+                        frames[time_idx, :, :] = im
+                    ax.imshow(im, origin='lower', extent=extent, cmap=cm.Blues)
+                    ax.set_title("Smoothing over %d neighbours" % neighbour)
+                    ax.set_xlim(extent[0], extent[1])
+                    ax.set_ylim(extent[2], extent[3])
+
+            plt.savefig('{}/EV/{}.png'.format(date, timestamp[time_idx]), dpi=300, bbox_inches='tight')
+            plt.close()
+
+        # save frames into npy
+        np.save(
+            '{}/EV/ev_density_{}_res_{}_tstart_{}_tend_{}_interval_{}_smoothing_{}.npy'
+                .format(date, date, resolution, t_start, t_end, interval, smoothing), frames)
+
+pass
 
 
 def save_frames(frames, timestamp, lat, lon):
@@ -223,20 +288,18 @@ def save_frames(frames, timestamp, lat, lon):
 
 if __name__ == '__main__':
     # Threading for parallel computing
-
+    None
 
     # set parameters
     date = 20190801
-    resolution = 5
-    t_start, t_end = 1564646400, 1564689600  # 8am to 8pm
-    t_start, t_end = 1564646400, 1564646400+300
-    lat_min, lon_min, lat_max, lon_max = 32, -85.5, 35, -82.5
+    t_start, t_end = 1564646400 + 3600*4, 1564646400 + 3600*8
+    lat_min, lon_min, lat_max, lon_max = 32, -88, 38, -78
+    interval = 60
+    resolution = 128
+    neighbours = [0, 4, 16, 32]
+    smoothing = 16
 
-    #timestamp, interval = list(range(t_start, t_end)), 1  # 1s interval timestamp
-
-    interval = 100
     timestamp = np.arange(t_start, t_end + 1, interval)
-
     lat = np.linspace(lat_min, lat_max, resolution).tolist()
     lon = np.linspace(lon_min, lon_max, resolution).tolist()
 
@@ -244,14 +307,17 @@ if __name__ == '__main__':
     iff_file_path = glob.glob("/media/ypang6/paralab/Research/data/ZTL/IFF_ZTL_{}*.csv".format(date))[0]
     ev_file_path = glob.glob("/media/ypang6/paralab/Research/data/EV_ZTL/EV_ZTL_{}*.csv".format(date))[0]
 
-    # process the ac density map
-    #ac_map = ac_density_map(iff_file_path, lat, lon, timestamp, geospark_sql=True)
-    ac_map = ac_density_map(iff_file_path, lat, lon, timestamp, geospark_rdd=True)
-    np.save('ac_density_{}_res_{}_tstart_{}_tend_{}_interval_{}.npy'.format(date, resolution-1, t_start, t_end, interval), ac_map)
+    directory = './{}/EV'.format(date)
+    if not os.path.exists(directory):
+        os.makedirs(directory)
 
     # process the ev density map
-    #ev_density_map(ev_file_path, lat, lon, timestamp)
+    ev_density_map(ev_file_path, lat, lon, timestamp, neighbours, smoothing)
 
-    # visualization
-    frames = np.load('ac_density_{}_res_{}_tstart_{}_tend_{}_interval_{}.npy'.format(date, resolution-1, t_start, t_end, interval))
-    save_frames(frames, timestamp, lat, lon)
+    # process the ac density map
+    #ac_map = ac_density_map(iff_file_path, lat, lon, timestamp, geospark_sql=True)
+    #ac_map = ac_density_map(iff_file_path, lat, lon, timestamp, geospark_rdd=True)
+    #np.save('ac_density_{}_res_{}_tstart_{}_tend_{}_interval_{}.npy'.format(date, resolution-1, t_start, t_end, interval), ac_map)
+
+
+

@@ -204,8 +204,10 @@ if __name__ == '__main__':
     lat_min, lon_min, lat_max, lon_max = 32, -88, 38, -78
     interval = 60
     resolution = 256
-    neighbours = [0, 16]
+    neighbours = [0, 4, 16, 32]
+    smoothing = 16
     lat_atl, lon_atl = 33.64, -84.82
+    print("KATL before projection: Lon: {} Lat: {}".format(lon_atl, lat_atl))
 
     timestamp = np.arange(t_start, t_end + 1, interval)
     lat = np.linspace(lat_min, lat_max, resolution).tolist()
@@ -215,23 +217,24 @@ if __name__ == '__main__':
     df = read_iff_file(file_path, record_types=3, chunksize=1e7)
     df = df[['time', 'latitude', 'longitude', 'callsign']]
 
-    # load arrival flight list
-    arr = pd.read_csv("acId_ATL_Arr.dat", sep="'", names=['d1', 'arr', 'd2']).drop(columns=['d1', 'd2']).arr.tolist()
-    df = df[df['callsign'].isin(arr)]
+    # # load arrival flight list
+    # arr = pd.read_csv("acId_ATL_Arr.dat", sep="'", names=['d1', 'arr', 'd2']).drop(columns=['d1', 'd2']).arr.tolist()
+    # df = df[df['callsign'].isin(arr)]
+    #
+    # # convert wgs84 to km with a reference point
+    # inProj = pyproj.Proj(init='epsg:4326')  # WGS84
+    # outProj = pyproj.Proj(init='epsg:2781')  # NAD83(HARN) / Georgia West
+    # df['newLon'], df['newLat'] = pyproj.transform(inProj, outProj, df['longitude'].tolist(), df['latitude'].tolist())
+    # [lon_min, lon_max], [lat_min, lat_max] = pyproj.transform(inProj, outProj, [lon_min, lon_max], [lat_min, lat_max])
+    # lon_atl, lat_atl = pyproj.transform(inProj, outProj, lon_atl, lat_atl)  # KATL
+    # print("KATL after projection: Lon: {} Lat: {}".format(lon_atl, lat_atl))
 
-    # convert wgs84 to km with a reference point
-    inProj = pyproj.Proj(init='epsg:4326')  # WGS84
-    outProj = pyproj.Proj(init='epsg:2781')  # NAD83(HARN) / Georgia West
-    df['newLon'], df['newLat'] = pyproj.transform(inProj, outProj, df['longitude'].tolist(), df['latitude'].tolist())
-    [lon_min, lon_max], [lat_min, lat_max] = pyproj.transform(inProj, outProj, [lon_min, lon_max], [lat_min, lat_max])
-    lon_atl, lat_atl = pyproj.transform(inProj, outProj, lon_atl, lat_atl)  # KATL
-
-    directory = './{}'.format(date)
+    directory = './{}/IFF'.format(date)
     if not os.path.exists(directory):
         os.makedirs(directory)
 
     frames = np.zeros(shape=(len(timestamp) - 1, resolution, resolution))
-    original_coord = np.zeros(shape=(len(timestamp) - 1, resolution, 2))
+    #original_coord = np.zeros(shape=(len(timestamp) - 1, resolution, 2))
     for time_idx in range(len(timestamp) - 1):
         # temp_df = df.loc[(df['time'] >= timestamp[time_idx]) & (df['time'] <= timestamp[time_idx + 1]) &
         #                  (df['latitude'] >= lat_min) & (df['latitude'] <= lat_max) &
@@ -239,19 +242,19 @@ if __name__ == '__main__':
 
         temp_df = df.loc[(df['time'] >= timestamp[time_idx]) & (df['time'] <= timestamp[time_idx + 1])]
 
-        #ys, xs = temp_df['latitude'].to_numpy(), temp_df['longitude'].to_numpy()
-        ys, xs = temp_df['newLat'].to_numpy(), temp_df['newLon'].to_numpy()
+        ys, xs = temp_df['latitude'].to_numpy(), temp_df['longitude'].to_numpy()
+        #ys, xs = temp_df['newLat'].to_numpy(), temp_df['newLon'].to_numpy()
 
         #extent = [np.min(xs), np.max(xs), np.min(ys), np.max(ys)]
         extent = [lon_min, lon_max, lat_min, lat_max]
         xv = data_coord2view_coord(xs, resolution, extent[0], extent[1])
         yv = data_coord2view_coord(ys, resolution, extent[2], extent[3])
 
-        fig, axes = plt.subplots(1, 2, figsize=(15, 10))
+        fig, axes = plt.subplots(2, 2, figsize=(15, 10))
         for ax, neighbour in zip(axes.flatten(), neighbours):
             
             if neighbour == 0:
-                # np.concatenate((np.expand_dims(ys, axis=1), np.expand_dims(xs, axis=1)), axis=1)  # save ys and xs
+                #original_coord[time_idx, :, :] = np.concatenate((np.expand_dims(ys, axis=1), np.expand_dims(xs, axis=1)), axis=1)  # save ys and xs
                 ax.plot(xs, ys, 'k.', markersize=5)
                 ax.set_aspect('equal')
                 ax.set_title("Scatter Plot")
@@ -259,15 +262,25 @@ if __name__ == '__main__':
                 ax.set_ylim(extent[2], extent[3])
             else:
                 im = kNN2DDens(xv, yv, resolution, neighbour)
-                frames[time_idx, :, :] = im
+                if neighbour == smoothing:
+                    frames[time_idx, :, :] = im
                 ax.imshow(im, origin='lower', extent=extent, cmap=cm.Blues)
                 ax.set_title("Smoothing over %d neighbours" % neighbour)
                 ax.set_xlim(extent[0], extent[1])
                 ax.set_ylim(extent[2], extent[3])
 
-        plt.savefig('{}/{}.png'.format(date, timestamp[time_idx]), dpi=300, bbox_inches='tight')
+        plt.savefig('{}/IFF/{}.png'.format(date, timestamp[time_idx]), dpi=300, bbox_inches='tight')
         plt.close()
 
     # save frames into matlab readable file
-    from scipy.io import savemat
-    savemat("demo_file.mat", {"file": frames})
+    # from scipy.io import savemat
+    # savemat("demo_file.mat", {"file": frames})
+
+    # save frames into npy
+    np.save(
+        '{}/IFF/ac_density_{}_res_{}_tstart_{}_tend_{}_interval_{}_smoothing_{}.npy'
+            .format(date, date, resolution, t_start, t_end, interval, smoothing), frames)
+
+    # np.save(
+    #     'ac_density_{}_res_{}_tstart_{}_tend_{}_interval_{}_raw.npy'
+    #         .format(date, resolution, t_start, t_end, interval), original_coord)
