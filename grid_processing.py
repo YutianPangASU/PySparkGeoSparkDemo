@@ -272,8 +272,8 @@ def ev_density_map(ev_file_path, lat, lon, time, neighbours, smoothing):
 
         # save frames into npy
         np.save(
-            '{}/EV/ev_density_{}_res_{}_tstart_{}_tend_{}_interval_{}_smoothing_{}.npy'
-                .format(date, date, resolution, t_start, t_end, interval, smoothing), frames)
+            'processed_npy/ev_density_{}_res_{}_tstart_{}_tend_{}_interval_{}_smoothing_{}.npy'
+                .format(date, resolution, t_start, t_end, interval, smoothing), frames)
 
 pass
 
@@ -290,34 +290,40 @@ if __name__ == '__main__':
     # Threading for parallel computing
     None
 
-    # set parameters
-    date = 20190801
-    t_start, t_end = 1564646400 + 3600*4, 1564646400 + 3600*8
-    lat_min, lon_min, lat_max, lon_max = 32, -88, 38, -78
-    interval = 60
-    resolution = 128
-    neighbours = [0, 4, 16, 32]
-    smoothing = 16
+    #date = 20190801
+    # need to iterate date
+    start_date = 20190801
+    end_date = 20190831
 
-    timestamp = np.arange(t_start, t_end + 1, interval)
-    lat = np.linspace(lat_min, lat_max, resolution).tolist()
-    lon = np.linspace(lon_min, lon_max, resolution).tolist()
+    for date in range(start_date, end_date + 1):
+        # set parameters
+        t_start, t_end = 1564646400 + 3600*4 + 86400*(date - start_date), 1564646400 + 3600*8 + 86400*(date - start_date)
+        lat_min, lon_min, lat_max, lon_max = 32, -88, 38, -78
+        interval = 60
+        resolution = 128
+        neighbours = [0, 4, 16, 32]
+        smoothing = 16
 
-    # load file path
-    iff_file_path = glob.glob("/media/ypang6/paralab/Research/data/ZTL/IFF_ZTL_{}*.csv".format(date))[0]
-    ev_file_path = glob.glob("/media/ypang6/paralab/Research/data/EV_ZTL/EV_ZTL_{}*.csv".format(date))[0]
+        timestamp = np.arange(t_start, t_end + 1, interval)
+        lat = np.linspace(lat_min, lat_max, resolution).tolist()
+        lon = np.linspace(lon_min, lon_max, resolution).tolist()
 
-    directory = './{}/EV'.format(date)
-    if not os.path.exists(directory):
-        os.makedirs(directory)
+        # load file path
+        iff_file_path = glob.glob("/media/ypang6/paralab/Research/data/ZTL/IFF_ZTL_{}*.csv".format(date))[0]
+        ev_file_path = glob.glob("/media/ypang6/paralab/Research/data/EV_ZTL/EV_ZTL_{}*.csv".format(date))[0]
 
-    # process the ev density map
-    ev_density_map(ev_file_path, lat, lon, timestamp, neighbours, smoothing)
+        directory = './{}/EV'.format(date)
+        if not os.path.exists(directory):
+            os.makedirs(directory)
 
-    # process the ac density map
-    #ac_map = ac_density_map(iff_file_path, lat, lon, timestamp, geospark_sql=True)
-    #ac_map = ac_density_map(iff_file_path, lat, lon, timestamp, geospark_rdd=True)
-    #np.save('ac_density_{}_res_{}_tstart_{}_tend_{}_interval_{}.npy'.format(date, resolution-1, t_start, t_end, interval), ac_map)
+        # process the ev density map
+        ev_density_map(ev_file_path, lat, lon, timestamp, neighbours, smoothing)
+
+        # process the ac density map
+        #ac_map = ac_density_map(iff_file_path, lat, lon, timestamp, geospark_sql=True)
+        #ac_map = ac_density_map(iff_file_path, lat, lon, timestamp, geospark_rdd=True)
+        #np.save('ac_density_{}_res_{}_tstart_{}_tend_{}_interval_{}.npy'.format(date, resolution-1, t_start, t_end, interval), ac_map)
+        print("Finished Processing AC Density on {}".format(date))
 
 
 
