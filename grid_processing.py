@@ -1,18 +1,18 @@
-# spark configuration
 import os
-os.environ["SPARK_HOME"] = '/home/ypang6/anaconda3/lib/python3.7/site-packages/pyspark'
-os.environ["PYTHONPATH"] = '/home/ypang6/anaconda3/bin/python3.7'
-os.environ['PYSPARK_PYTHON'] = '/home/ypang6/anaconda3/bin/python3.7'
-os.environ['PYSPARK_DRIVER_PYTHON'] = '/home/ypang6/anaconda3/bin/python3.7'
-
-import numpy as np
 import glob
-import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import matplotlib.cm as cm
+import matplotlib.pyplot as plt
 
 
 def ac_density_map(iff_file_path, lat, lon, time, geospark_rdd=False, geospark_sql=False):
+    # spark configuration
+    os.environ["SPARK_HOME"] = '/home/ypang6/anaconda3/lib/python3.7/site-packages/pyspark'
+    os.environ["PYTHONPATH"] = '/home/ypang6/anaconda3/bin/python3.7'
+    os.environ['PYSPARK_PYTHON'] = '/home/ypang6/anaconda3/bin/python3.7'
+    os.environ['PYSPARK_DRIVER_PYTHON'] = '/home/ypang6/anaconda3/bin/python3.7'
+
     import threading
     from pyspark.sql import SparkSession
     from geospark.register import GeoSparkRegistrator
@@ -217,7 +217,8 @@ def data_coord2view_coord(p, resolution, pmin, pmax):
     return dv
 
 
-def ev_density_map(ev_file_path, lat, lon, time, neighbours, smoothing):
+def ev_density_map(ev_file_path, lat, lon, time, neighbours, smoothing, resolution, lon_min, lon_max, lat_min, lat_max,
+                   date, timestamp, t_start, t_end, interval):
     df = pd.read_csv(ev_file_path)
 
     # remove useless columns
@@ -252,7 +253,8 @@ def ev_density_map(ev_file_path, lat, lon, time, neighbours, smoothing):
             for ax, neighbour in zip(axes.flatten(), neighbours):
 
                 if neighbour == 0:
-                    #original_coord[time_idx, :, :] = np.concatenate((np.expand_dims(ys, axis=1), np.expand_dims(xs, axis=1)), axis=1)  # save ys and xs
+                    #original_coord[time_idx, :, :] = np.concatenate((np.expand_dims(ys, axis=1),
+                    # np.expand_dims(xs, axis=1)), axis=1)  # save ys and xs
                     ax.plot(xs, ys, 'k.', markersize=5)
                     ax.set_aspect('equal')
                     ax.set_title("Scatter Plot")
@@ -266,7 +268,7 @@ def ev_density_map(ev_file_path, lat, lon, time, neighbours, smoothing):
                     ax.set_title("Smoothing over %d neighbours" % neighbour)
                     ax.set_xlim(extent[0], extent[1])
                     ax.set_ylim(extent[2], extent[3])
-
+            plt.show()
             plt.savefig('{}/EV/{}.png'.format(date, timestamp[time_idx]), dpi=300, bbox_inches='tight')
             plt.close()
 
@@ -275,7 +277,61 @@ def ev_density_map(ev_file_path, lat, lon, time, neighbours, smoothing):
             'processed_npy/ev_density_{}_res_{}_tstart_{}_tend_{}_interval_{}_smoothing_{}.npy'
                 .format(date, resolution, t_start, t_end, interval, smoothing), frames)
 
-pass
+
+def safety_ev_density_map(ev_file_path, lat, lon, time, resolution, lon_min, lon_max, lat_min,
+                          lat_max, date, timestamp, t_start, t_end, interval):
+    df = pd.read_csv(ev_file_path)
+
+    # remove useless columns
+    cols = ['tMidnightSecs', 'AcId', 'tEv', 'EvType', 'Lat', 'Lon']
+    df = df[cols]
+
+    # only select EV_GOA and EV_LOOP
+    df = df[df["EvType"].isin(["EV_GOA", "EV_LOOP"])]
+    #df = df[(df['EvType'] == 'EV_LOOP') | (df['EvType'] == 'EV_GOA')]
+
+    # correct tEv
+    df["tEv"] = df["tEv"] + df["tMidnightSecs"]
+    df["tEv"] = df[["tEv"]].astype(int)
+    df = df.drop(['tMidnightSecs', 'EvType'], axis=1)
+
+    if time[1]-time[0] == 1:  # timeframe 1 second interval
+        frames = np.zeros(shape=(len(time), len(lat) - 1, len(lon) - 1))
+        for index_t in range(len(time)):
+            df_temp = df.loc[df['tEv'] == time[index_t]]
+            print("Implementation not finished.")
+
+    else:  # greater than 1 second interval
+        frames = np.zeros(shape=(len(time)-1, resolution, resolution))
+        #original_coord = np.zeros(shape=(len(time) - 1, resolution, 2))
+
+        for time_idx in range(len(time)-1):
+            temp_df = df.loc[(df['tEv'] >= time[time_idx]) & (df['tEv'] <= time[time_idx+1])]
+
+            ys, xs = temp_df['Lat'].to_numpy(), temp_df['Lon'].to_numpy()
+            extent = [lon_min, lon_max, lat_min, lat_max]
+            xv = data_coord2view_coord(xs, resolution, extent[0], extent[1])
+            yv = data_coord2view_coord(ys, resolution, extent[2], extent[3])
+
+            fig = plt.figure()
+            ax = fig.add_subplot(111)
+            #ax.plot(xs, ys, 'k.', markersize=5)
+            value, _, _, _ = plt.hist2d(xs, ys, bins=resolution,
+                                        range=[[lon_min, lon_max], [lat_min, lat_max]], cmap=cm.Blues)
+
+            ax.set_aspect('equal')
+            ax.set_title("Scatter Plot")
+            ax.set_xlim(extent[0], extent[1])
+            ax.set_ylim(extent[2], extent[3])
+
+            # plt.show()
+            plt.savefig('{}/EV_2Class/{}.png'.format(date, timestamp[time_idx]), dpi=300, bbox_inches='tight')
+            plt.close()
+
+        # save frames into npy
+        np.save(
+            'processed_npy/ev_2class_density_{}_res_{}_tstart_{}_tend_{}_interval_{}.npy'
+                .format(date, resolution, t_start, t_end, interval), frames)
 
 
 def save_frames(frames, timestamp, lat, lon):
@@ -286,11 +342,7 @@ def save_frames(frames, timestamp, lat, lon):
     pass
 
 
-if __name__ == '__main__':
-    # Threading for parallel computing
-    None
-
-    #date = 20190801
+def run_EV():
     # need to iterate date
     start_date = 20190801
     end_date = 20190831
@@ -298,10 +350,11 @@ if __name__ == '__main__':
     for date in range(start_date, end_date + 1):
         try:
             # set parameters
-            t_start, t_end = 1564646400 + 3600*4 + 86400*(date - start_date), 1564646400 + 3600*8 + 86400*(date - start_date)
+            t_start, t_end = 1564646400 + 3600*4 + 86400*(date - start_date), \
+                             1564646400 + 3600*8 + 86400*(date - start_date)
             lat_min, lon_min, lat_max, lon_max = 32, -88, 38, -78
             interval = 60
-            resolution = 128
+            resolution = 64
             neighbours = [0, 4, 16, 32]
             smoothing = 16
 
@@ -310,7 +363,6 @@ if __name__ == '__main__':
             lon = np.linspace(lon_min, lon_max, resolution).tolist()
 
             # load file path
-            iff_file_path = glob.glob("/media/ypang6/paralab/Research/data/ZTL/IFF_ZTL_{}*.csv".format(date))[0]
             ev_file_path = glob.glob("/media/ypang6/paralab/Research/data/EV_ZTL/EV_ZTL_{}*.csv".format(date))[0]
 
             directory = './{}/EV'.format(date)
@@ -318,14 +370,63 @@ if __name__ == '__main__':
                 os.makedirs(directory)
 
             # process the ev density map
-            ev_density_map(ev_file_path, lat, lon, timestamp, neighbours, smoothing)
+            ev_density_map(ev_file_path, lat, lon, timestamp, neighbours, smoothing, resolution, lon_min, lon_max,
+                           lat_min, lat_max, date, timestamp, t_start, t_end, interval)
 
             # process the ac density map
             #ac_map = ac_density_map(iff_file_path, lat, lon, timestamp, geospark_sql=True)
             #ac_map = ac_density_map(iff_file_path, lat, lon, timestamp, geospark_rdd=True)
-            #np.save('ac_density_{}_res_{}_tstart_{}_tend_{}_interval_{}.npy'.format(date, resolution-1, t_start, t_end, interval), ac_map)
+            #np.save('ac_density_{}_res_{}_tstart_{}_tend_{}_interval_{}.npy'
+            # .format(date, resolution-1, t_start, t_end, interval), ac_map)
             print("Finished Processing EV Density on {}".format(date))
         except ValueError:
             print("ValueError during Processing EV Density on {}".format(date))
+
+
+def run_EV_2class():
+    # need to iterate date
+    start_date = 20190801
+    end_date = 20190831
+
+    for date in range(start_date, end_date + 1):
+        try:
+            # set parameters
+            t_start, t_end = 1564646400 + 3600*4 + 86400*(date - start_date), 1564646400 + 3600*8 + 86400*(date-start_date)
+            lat_min, lon_min, lat_max, lon_max = 32, -88, 38, -78
+            interval = 60
+            resolution = 64
+
+            timestamp = np.arange(t_start, t_end + 1, interval)
+            lat = np.linspace(lat_min, lat_max, resolution).tolist()
+            lon = np.linspace(lon_min, lon_max, resolution).tolist()
+
+            # load file path
+            ev_file_path = glob.glob("/media/ypang6/paralab/Research/data/EV_ZTL/EV_ZTL_{}*.csv".format(date))[0]
+
+            directory = './{}/EV_2Class'.format(date)
+            if not os.path.exists(directory):
+                os.makedirs(directory)
+
+            # process the ev density map
+            safety_ev_density_map(ev_file_path, lat, lon, timestamp, resolution, lon_min,
+                                  lon_max, lat_min, lat_max, date, timestamp, t_start, t_end, interval)
+
+            # process the ac density map
+            #ac_map = ac_density_map(iff_file_path, lat, lon, timestamp, geospark_sql=True)
+            #ac_map = ac_density_map(iff_file_path, lat, lon, timestamp, geospark_rdd=True)
+            #np.save('ac_density_{}_res_{}_tstart_{}_tend_{}_interval_{}.npy'
+            # .format(date, resolution-1, t_start, t_end, interval), ac_map)
+            print("Finished Processing 2 Class EV Density on {}".format(date))
+        except ValueError:
+            print("ValueError during Processing 2 Class EV Density on {}".format(date))
+
+
+if __name__ == '__main__':
+
+    # Visualize all 15 flight events in the flight event csv file
+    # run_EV()
+
+    # Visualize safety related flight events only
+    run_EV_2class()
 
 
