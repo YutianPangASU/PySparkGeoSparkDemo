@@ -268,7 +268,7 @@ def ev_density_map(ev_file_path, lat, lon, time, neighbours, smoothing, resoluti
                     ax.set_title("Smoothing over %d neighbours" % neighbour)
                     ax.set_xlim(extent[0], extent[1])
                     ax.set_ylim(extent[2], extent[3])
-            plt.show()
+            # plt.show()
             plt.savefig('{}/EV/{}.png'.format(date, timestamp[time_idx]), dpi=300, bbox_inches='tight')
             plt.close()
 
@@ -316,8 +316,8 @@ def safety_ev_density_map(ev_file_path, lat, lon, time, resolution, lon_min, lon
             fig = plt.figure()
             ax = fig.add_subplot(111)
             #ax.plot(xs, ys, 'k.', markersize=5)
-            value, _, _, _ = plt.hist2d(xs, ys, bins=resolution,
-                                        range=[[lon_min, lon_max], [lat_min, lat_max]], cmap=cm.Blues)
+            frames[time_idx, :, :], _, _, _ = plt.hist2d(xs, ys, bins=resolution,
+                                                         range=[[lon_min, lon_max], [lat_min, lat_max]], cmap=cm.Blues)
 
             ax.set_aspect('equal')
             ax.set_title("Scatter Plot")
@@ -394,7 +394,7 @@ def run_EV_2class():
             t_start, t_end = 1564646400 + 3600*4 + 86400*(date - start_date), 1564646400 + 3600*8 + 86400*(date-start_date)
             lat_min, lon_min, lat_max, lon_max = 32, -88, 38, -78
             interval = 60
-            resolution = 64
+            resolution = 32
 
             timestamp = np.arange(t_start, t_end + 1, interval)
             lat = np.linspace(lat_min, lat_max, resolution).tolist()
